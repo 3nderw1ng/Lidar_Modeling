@@ -1,0 +1,1 @@
+& "C:/Users/32239/AppData/Local/Programs/Python/Python311/python.exe" d:/LUA/Lidar_Modeling/lidar_data_get_module/setup.py build_ext --inplace --compiler=mingw32
