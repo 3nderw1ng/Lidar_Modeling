@@ -1,6 +1,6 @@
 #include <Python.h>
 #include <WinSock2.h>
-#include <vector>
+#include <deque>
 #include <thread>
 #include <mutex>
 #include <cmath>
@@ -17,8 +17,9 @@ typedef struct {
     float theta;
 } LiDarPoint;
 
-static std::vector<LiDarPoint> scanPoints;
+static std::deque<LiDarPoint> scanPoints;
 static std::mutex dataMutex;
+const size_t MAX_POINTS = 100000;
 
 static float ChList[16] = { -15.0f, 1.0f, -13.0f, 3.0f, -11.0f, 5.0f, -9.0f, 7.0f,
                             -7.0f, 9.0f, -5.0f, 11.0f, -3.0f, 13.0f, -1.0f, 15.0f };
@@ -56,6 +57,9 @@ static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex, uin
     float z = r * sin(_w) + offsetV[chIndex] * 0.001f;
 
     std::lock_guard<std::mutex> lock(dataMutex);
+    if (scanPoints.size() >= MAX_POINTS) {
+        scanPoints.pop_front();  // 环形缓冲策略：移除最老点
+    }
     scanPoints.push_back({x, y, z, intensity, timestamp, chIndex, r, _ang});
 }
 
@@ -124,7 +128,6 @@ static void ReceiveThread() {
                 AddPoint(r, angle + 0.18f, intensity, j, timestamp);
             }
         }
-
     }
 
     closesocket(s);
@@ -139,7 +142,7 @@ static PyObject* get_latest_points(PyObject* self, PyObject* args) {
         PyObject* point = Py_BuildValue("(fffBIBff)", p.x, p.y, p.z, p.i, p.timestamp, p.channel, p.r, p.theta);
         PyList_SetItem(list, i, point);
     }
-    scanPoints.clear();
+    scanPoints.clear();  // 可选，是否清空视需求决定
     return list;
 }
 
