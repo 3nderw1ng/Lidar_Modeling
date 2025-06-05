@@ -13,6 +13,8 @@ typedef struct {
     uint8_t i;
     uint32_t timestamp;
     uint8_t channel;
+    float r;
+    float theta;
 } LiDarPoint;
 
 static std::vector<LiDarPoint> scanPoints;
@@ -45,15 +47,16 @@ typedef struct {
 #pragma pack(pop)
 
 static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex, uint32_t timestamp) {
-    float _ang = (ang + chIndex * 0.0108f) * 3.14159265f / 180.0f;
+    float _ang = (ang + chIndex * 0.0108f);
+    float _ang_rad = _ang * 3.14159265f / 180.0f;
     float _w = ChList[chIndex] * 3.14159265f / 180.0f;
 
-    float x = r * cos(_w) * cos(_ang) + offsetH[chIndex] * cos(_ang) * 0.001f;
-    float y = r * cos(_w) * sin(_ang) - offsetH[chIndex] * sin(_ang) * 0.001f;
+    float x = r * cos(_w) * cos(_ang_rad) + offsetH[chIndex] * cos(_ang_rad) * 0.001f;
+    float y = r * cos(_w) * sin(_ang_rad) - offsetH[chIndex] * sin(_ang_rad) * 0.001f;
     float z = r * sin(_w) + offsetV[chIndex] * 0.001f;
 
     std::lock_guard<std::mutex> lock(dataMutex);
-    scanPoints.push_back({x, y, z, intensity, timestamp, chIndex});
+    scanPoints.push_back({x, y, z, intensity, timestamp, chIndex, r, _ang});
 }
 
 static void ReceiveThread() {
@@ -122,10 +125,12 @@ static void ReceiveThread() {
             }
         }
 
+        printf("[INFO] Processed 1 packet (%d bytes)\n", nResult);
     }
 
     closesocket(s);
     WSACleanup();
+    printf("[INFO] ReceiveThread exited.\n");
 }
 
 static PyObject* get_latest_points(PyObject* self, PyObject* args) {
@@ -133,7 +138,7 @@ static PyObject* get_latest_points(PyObject* self, PyObject* args) {
     PyObject* list = PyList_New(scanPoints.size());
     for (size_t i = 0; i < scanPoints.size(); ++i) {
         const LiDarPoint& p = scanPoints[i];
-        PyObject* point = Py_BuildValue("(fffBIB)", p.x, p.y, p.z, p.i, p.timestamp, p.channel);
+        PyObject* point = Py_BuildValue("(fffBIBff)", p.x, p.y, p.z, p.i, p.timestamp, p.channel, p.r, p.theta);
         PyList_SetItem(list, i, point);
     }
     scanPoints.clear();
