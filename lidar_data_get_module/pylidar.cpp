@@ -11,6 +11,8 @@
 typedef struct {
     float x, y, z;
     uint8_t i;
+    uint32_t timestamp;
+    uint8_t channel;
 } LiDarPoint;
 
 static std::vector<LiDarPoint> scanPoints;
@@ -42,7 +44,7 @@ typedef struct {
 } RawPacket;
 #pragma pack(pop)
 
-static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex) {
+static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex, uint32_t timestamp) {
     float _ang = (ang + chIndex * 0.0108f) * 3.14159265f / 180.0f;
     float _w = ChList[chIndex] * 3.14159265f / 180.0f;
 
@@ -51,7 +53,7 @@ static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex) {
     float z = r * sin(_w) + offsetV[chIndex] * 0.001f;
 
     std::lock_guard<std::mutex> lock(dataMutex);
-    scanPoints.push_back({x, y, z, intensity});
+    scanPoints.push_back({x, y, z, intensity, timestamp, chIndex});
 }
 
 static void ReceiveThread() {
@@ -70,7 +72,6 @@ static void ReceiveThread() {
         return;
     }
 
-    // 设置 socket 复用地址
     int opt = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
@@ -105,27 +106,26 @@ static void ReceiveThread() {
         }
 
         RawPacket* packet = (RawPacket*)szBuf;
+        uint32_t timestamp = packet->timestamp;
 
         for (int i = 0; i < 12; ++i) {
             float angle = packet->blocks[i].azimuth * 0.01f;
             for (int j = 0; j < 16; ++j) {
                 float r = packet->blocks[i].points[j].distance * 0.002f;
                 uint8_t intensity = packet->blocks[i].points[j].intensity;
-                AddPoint(r, angle, intensity, j);
+                AddPoint(r, angle, intensity, j, timestamp);
             }
             for (int j = 0; j < 16; ++j) {
                 float r = packet->blocks[i].points[j + 16].distance * 0.002f;
                 uint8_t intensity = packet->blocks[i].points[j + 16].intensity;
-                AddPoint(r, angle + 0.18f, intensity, j);
+                AddPoint(r, angle + 0.18f, intensity, j, timestamp);
             }
         }
 
-        printf("[INFO] Processed 1 packet (%d bytes)\n", nResult);
     }
 
     closesocket(s);
     WSACleanup();
-    printf("[INFO] ReceiveThread exited.\n");
 }
 
 static PyObject* get_latest_points(PyObject* self, PyObject* args) {
@@ -133,7 +133,7 @@ static PyObject* get_latest_points(PyObject* self, PyObject* args) {
     PyObject* list = PyList_New(scanPoints.size());
     for (size_t i = 0; i < scanPoints.size(); ++i) {
         const LiDarPoint& p = scanPoints[i];
-        PyObject* point = Py_BuildValue("(fffB)", p.x, p.y, p.z, p.i);
+        PyObject* point = Py_BuildValue("(fffBIB)", p.x, p.y, p.z, p.i, p.timestamp, p.channel);
         PyList_SetItem(list, i, point);
     }
     scanPoints.clear();
@@ -150,6 +150,6 @@ static struct PyModuleDef lidarmodule = {
 };
 
 PyMODINIT_FUNC PyInit_pylidar(void) {
-    std::thread(ReceiveThread).detach();  // 后台线程启动
+    std::thread(ReceiveThread).detach();
     return PyModule_Create(&lidarmodule);
 }
