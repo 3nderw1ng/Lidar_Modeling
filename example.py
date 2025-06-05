@@ -12,5 +12,3 @@ else:
     for i in range(min(5, points.shape[0])):
         x, y, z, intensity, timestamp, channel = points[i]
         print(f"Point {i}: x={x:.3f}, y={y:.3f}, z={z:.3f}, intensity={intensity:.1f}, timestamp={timestamp:.3f}, channel={int(channel)}")
-else:
-    print("No points in latest scan or failed to retrieve data")
