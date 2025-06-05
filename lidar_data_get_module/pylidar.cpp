@@ -125,12 +125,10 @@ static void ReceiveThread() {
             }
         }
 
-        printf("[INFO] Processed 1 packet (%d bytes)\n", nResult);
     }
 
     closesocket(s);
     WSACleanup();
-    printf("[INFO] ReceiveThread exited.\n");
 }
 
 static PyObject* get_latest_points(PyObject* self, PyObject* args) {
