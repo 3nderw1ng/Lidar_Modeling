@@ -4,6 +4,7 @@
 #include <thread>
 #include <mutex>
 #include <cmath>
+#include <cstdio>
 
 #pragma comment(lib, "WS2_32.lib")
 
@@ -42,8 +43,8 @@ typedef struct {
 #pragma pack(pop)
 
 static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex) {
-    float _ang = (ang + chIndex * 0.0108f) * 3.14159265358979f / 180.0f;
-    float _w = ChList[chIndex] * 3.14159265358979f / 180.0f;
+    float _ang = (ang + chIndex * 0.0108f) * 3.14159265f / 180.0f;
+    float _w = ChList[chIndex] * 3.14159265f / 180.0f;
 
     float x = r * cos(_w) * cos(_ang) + offsetH[chIndex] * cos(_ang) * 0.001f;
     float y = r * cos(_w) * sin(_ang) - offsetH[chIndex] * sin(_ang) * 0.001f;
@@ -54,27 +55,57 @@ static void AddPoint(float r, float ang, uint8_t intensity, uint8_t chIndex) {
 }
 
 static void ReceiveThread() {
+    printf("[INFO] ReceiveThread started.\n");
+
     WSADATA wsd;
-    SOCKET s;
-    SOCKADDR_IN sRecvAddr, sSendAddr;
-    char szBuf[1206] = {0};
-    int nBufLen = 1206, nResult = 0, nSenderAddrSize = sizeof(sSendAddr);
+    if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) {
+        printf("[ERROR] WSAStartup failed: %d\n", WSAGetLastError());
+        return;
+    }
 
-    if (WSAStartup(MAKEWORD(2, 2), &wsd) != 0) return;
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) {
+        printf("[ERROR] socket() failed: %d\n", WSAGetLastError());
+        WSACleanup();
+        return;
+    }
 
-    s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s == INVALID_SOCKET) return;
+    // 设置 socket 复用地址
+    int opt = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
+    SOCKADDR_IN sRecvAddr = {};
     sRecvAddr.sin_family = AF_INET;
     sRecvAddr.sin_port = htons(2368);
     sRecvAddr.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
-    if (bind(s, (SOCKADDR*)&sRecvAddr, sizeof(sRecvAddr)) != 0) return;
+
+    if (bind(s, (SOCKADDR*)&sRecvAddr, sizeof(sRecvAddr)) != 0) {
+        printf("[ERROR] bind() failed: %d\n", WSAGetLastError());
+        closesocket(s);
+        WSACleanup();
+        return;
+    }
+
+    printf("[INFO] UDP socket ready. Listening on port 2368...\n");
+
+    SOCKADDR_IN sSendAddr;
+    int nSenderAddrSize = sizeof(sSendAddr);
+    char szBuf[1206] = {0};
 
     while (true) {
-        nResult = recvfrom(s, szBuf, nBufLen, 0, (SOCKADDR*)&sSendAddr, &nSenderAddrSize);
-        if (nResult == SOCKET_ERROR) continue;
+        int nResult = recvfrom(s, szBuf, sizeof(szBuf), 0, (SOCKADDR*)&sSendAddr, &nSenderAddrSize);
+        if (nResult == SOCKET_ERROR) {
+            printf("[WARNING] recvfrom() failed: %d\n", WSAGetLastError());
+            continue;
+        }
+
+        if (nResult != 1206) {
+            printf("[WARNING] Unexpected packet size: %d bytes\n", nResult);
+            continue;
+        }
 
         RawPacket* packet = (RawPacket*)szBuf;
+
         for (int i = 0; i < 12; ++i) {
             float angle = packet->blocks[i].azimuth * 0.01f;
             for (int j = 0; j < 16; ++j) {
@@ -88,10 +119,13 @@ static void ReceiveThread() {
                 AddPoint(r, angle + 0.18f, intensity, j);
             }
         }
+
+        printf("[INFO] Processed 1 packet (%d bytes)\n", nResult);
     }
 
     closesocket(s);
     WSACleanup();
+    printf("[INFO] ReceiveThread exited.\n");
 }
 
 static PyObject* get_latest_points(PyObject* self, PyObject* args) {
@@ -116,6 +150,6 @@ static struct PyModuleDef lidarmodule = {
 };
 
 PyMODINIT_FUNC PyInit_pylidar(void) {
-    std::thread(ReceiveThread).detach();
+    std::thread(ReceiveThread).detach();  // 后台线程启动
     return PyModule_Create(&lidarmodule);
 }
