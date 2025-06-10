@@ -21,9 +21,16 @@ while True:
     
     if points_raw:  # 如果获取到数据
         # 提取点数据（x, y, z, i）以及其他信息
+        #xyz = np.array([[x, y, z] for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
+        #intensity = np.array([i for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
+        # 提取每个字段
         xyz = np.array([[x, y, z] for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
         intensity = np.array([i for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
-        
+        ts = np.array([ts for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float64)
+        ch = np.array([ch for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.int32)
+        r = np.array([r for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
+        theta = np.array([theta for x, y, z, i, ts, ch, r, theta in points_raw], dtype=np.float32)
+
         # 归一化反射率值（将反射率映射到 [0, 1] 范围）
         intensity_norm = (intensity - np.min(intensity)) / (np.max(intensity) - np.min(intensity))
         
@@ -49,7 +56,7 @@ while True:
             # 保存当前的点云数据
             timestamp = int(time.time())
             save_file = os.path.join(save_path, f"points_raw_{timestamp}.npz")
-            np.savez(save_file, xyz=xyz, intensity=intensity)
+            np.savez(save_file, xyz=xyz, intensity=intensity, ts=ts, ch=ch, r=r, theta=theta)
             print(f"Data saved to {save_file}")
 
         
